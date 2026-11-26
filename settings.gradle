@@ -1,0 +1,18 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		mavenCentral()
+		gradlePluginPortal()
+	}
+}
+
+rootProject.name = 'LHTRK-Mods'
+
+include 'lhtrk-access'
+include 'lhtrk-placeholders'
+include 'lhtrk-night-skipper'
+include 'lhtrk-admin'
+include 'lhtrk-afk'

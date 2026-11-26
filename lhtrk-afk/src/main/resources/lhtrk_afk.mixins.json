@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "lhtrk_sndct.afk.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ServerPlayerMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

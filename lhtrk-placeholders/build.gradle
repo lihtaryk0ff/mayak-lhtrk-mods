@@ -1,0 +1,5 @@
+dependencies {
+    implementation project(':lhtrk-access')
+    implementation project(':lhtrk-afk')
+    implementation fileTree(dir: '../libs', include: ['*.jar'])
+}

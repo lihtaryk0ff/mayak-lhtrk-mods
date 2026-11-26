@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lhtrk_night_skipper",
+  "version": "${version}",
+  "name": "LHTRK sndct Night Skipper",
+  "description": "Плавний пропуск ночі при сні 50% Гравців для LHTRK sndct",
+  "authors": [
+    "lihtaryk"
+  ],
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "lhtrk_sndct.sleep.LhtrkNightSkipperMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.3",
+    "java": ">=21",
+    "fabric-api": "*",
+    "lhtrk_access": "*",
+    "lhtrk_afk": "*"
+  }
+}

@@ -1,0 +1,4 @@
+dependencies {
+    implementation project(':lhtrk-access')
+    implementation project(':lhtrk-afk')
+}

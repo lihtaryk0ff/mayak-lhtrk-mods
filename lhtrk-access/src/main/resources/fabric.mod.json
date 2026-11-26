@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "lhtrk_access",
+  "version": "${version}",
+  "name": "LHTRK sndct Access",
+  "description": "Система доступів Гість/Гравець, захист Маяка та мобів для сервера LHTRK sndct",
+  "authors": [
+    "lihtaryk"
+  ],
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "lhtrk_sndct.access.LhtrkAccessMod"
+    ]
+  },
+  "mixins": [
+    "lhtrk_access.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.3",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "lhtrk_admin",
+  "version": "${version}",
+  "name": "LHTRK sndct Admin",
+  "description": "Адмінські команди телепортації між Маяком та Великими Землями для LHTRK sndct",
+  "authors": [
+    "lihtaryk"
+  ],
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "lhtrk_sndct.admin.LhtrkAdminMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.3",
+    "java": ">=21",
+    "fabric-api": "*",
+    "lhtrk_access": "*"
+  }
+}

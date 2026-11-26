@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "lhtrk_sndct.access.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ItemEntityMixin",
+    "ExperienceOrbMixin",
+    "FarmlandBlockMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

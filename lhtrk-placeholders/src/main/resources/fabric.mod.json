@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "lhtrk_placeholders",
+  "version": "${version}",
+  "name": "LHTRK sndct Placeholders",
+  "description": "Кастомні плейсхолдери часу, статусу, виміру та досягнень для LHTRK sndct",
+  "authors": [
+    "lihtaryk"
+  ],
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "lhtrk_sndct.placeholders.LhtrkPlaceholdersMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.3",
+    "java": ">=21",
+    "fabric-api": "*",
+    "lhtrk_access": "*",
+    "lhtrk_afk": "*"
+  }
+}

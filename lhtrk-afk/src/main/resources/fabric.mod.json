@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "lhtrk_afk",
+  "version": "${version}",
+  "name": "LHTRK sndct AFK",
+  "description": "Автоматичний AFK через 5 хв, сірий нік у табі, пауза лічильника часу гри та анімація частинок для LHTRK sndct",
+  "authors": [
+    "lihtaryk"
+  ],
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "lhtrk_sndct.afk.LhtrkAfkMod"
+    ]
+  },
+  "mixins": [
+    "lhtrk_afk.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~26.3",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
