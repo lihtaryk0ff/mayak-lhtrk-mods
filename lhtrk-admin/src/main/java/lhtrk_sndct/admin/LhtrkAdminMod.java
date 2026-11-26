@@ -1,5 +1,6 @@
 package lhtrk_sndct.admin;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import lhtrk_sndct.access.LhtrkAccessMod;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -74,36 +75,28 @@ public class LhtrkAdminMod implements ModInitializer {
                         return 1;
                     }));
 
-            var techRestartCmd = Commands.literal("techrestart")
-                    .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
-                    .executes(ctx -> {
-                        RestartScheduler.startTechRestart(ctx.getSource().getServer(), 15);
-                        return 1;
-                    })
-                    .then(Commands.literal("cancel")
-                            .executes(ctx -> {
-                                if (!RestartScheduler.cancelRestart(ctx.getSource().getServer())) {
-                                    ctx.getSource().sendFailure(Component.literal("◇ Немає активного перезавантаження для скасування."));
-                                    return 0;
-                                }
-                                return 1;
-                            }));
-            dispatcher.register(techRestartCmd);
-
-            dispatcher.register(Commands.literal("trestart")
-                    .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
-                    .executes(ctx -> {
-                        RestartScheduler.startTechRestart(ctx.getSource().getServer(), 15);
-                        return 1;
-                    })
-                    .then(Commands.literal("cancel")
-                            .executes(ctx -> {
-                                if (!RestartScheduler.cancelRestart(ctx.getSource().getServer())) {
-                                    ctx.getSource().sendFailure(Component.literal("◇ Немає активного перезавантаження для скасування."));
-                                    return 0;
-                                }
-                                return 1;
-                            })));
+            for (String cmdName : new String[]{"techrestart", "trestart"}) {
+                dispatcher.register(Commands.literal(cmdName)
+                        .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
+                        .executes(ctx -> {
+                            RestartScheduler.startTechRestart(ctx.getSource().getServer(), 15);
+                            return 1;
+                        })
+                        .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 3600))
+                                .executes(ctx -> {
+                                    int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
+                                    RestartScheduler.startTechRestart(ctx.getSource().getServer(), seconds);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("cancel")
+                                .executes(ctx -> {
+                                    if (!RestartScheduler.cancelRestart(ctx.getSource().getServer())) {
+                                        ctx.getSource().sendFailure(Component.literal("◇ Немає активного перезавантаження для скасування."));
+                                        return 0;
+                                    }
+                                    return 1;
+                                })));
+            }
         });
 
         LOGGER.info("Модуль LHTRK sndct Admin завантажено!");

@@ -69,15 +69,25 @@ public final class RestartScheduler {
     }
 
     public static void startTechRestart(MinecraftServer server, int seconds) {
+        int clampedSeconds = Math.max(1, seconds);
         long now = System.currentTimeMillis() / 1000L;
         techRestartActive = true;
-        techRestartTargetEpochSec = now + Math.max(5, seconds);
+        techRestartTargetEpochSec = now + clampedSeconds;
         lastCountdownShownSec = -1L;
         restartTriggered = false;
 
+        // Показуємо великий Title перед очима лише один раз на старті тех-рестарту
+        Component title = Component.literal("⚙ ТЕХНІЧНИЙ РЕСТАРТ")
+                .withStyle(ChatFormatting.BOLD)
+                .withColor(0xFF2A85);
+        Component subtitle = Component.literal("Перезавантаження через " + clampedSeconds + " сек...")
+                .withColor(0xFEE440);
+        sendTitleToAll(server, title, subtitle, 5, 50, 15);
+        playBellToAll(server);
+
         Component chat = Component.literal("⚙ ")
                 .withColor(0xFF2A85)
-                .append(Component.literal("УВАГА! Технічний рестарт сервера через " + seconds + " сек!").withColor(0xFEE440));
+                .append(Component.literal("УВАГА! Технічний рестарт сервера через " + clampedSeconds + " сек!").withColor(0xFEE440));
         broadcastChat(server, chat);
     }
 
@@ -129,16 +139,6 @@ public final class RestartScheduler {
         }
         if (remaining == lastCountdownShownSec) return;
         lastCountdownShownSec = remaining;
-
-        if (remaining == 15 || remaining == 10 || remaining <= 5) {
-            Component title = Component.literal("⚙ ТЕХНІЧНИЙ РЕСТАРТ")
-                    .withStyle(ChatFormatting.BOLD)
-                    .withColor(0xFF2A85);
-            Component subtitle = Component.literal("Перезавантаження через " + remaining + " сек...")
-                    .withColor(0xFEE440);
-            sendTitleToAll(server, title, subtitle, remaining <= 5 ? 0 : 5, 30, 10);
-            playBellToAll(server);
-        }
 
         Component actionBar = Component.literal("⚙ Технічний рестарт через ")
                 .withColor(0xFF2A85)
