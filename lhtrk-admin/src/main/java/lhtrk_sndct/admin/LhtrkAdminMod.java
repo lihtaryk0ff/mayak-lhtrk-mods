@@ -9,6 +9,7 @@ import lhtrk_sndct.placeholders.LhtrkPlaceholdersMod;
 import lhtrk_sndct.sleep.LhtrkNightSkipperMod;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.commands.Commands;
@@ -19,6 +20,8 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.levelgen.Heightmap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +31,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.EnumSet;
 import java.util.Locale;
 import java.util.Set;
 
@@ -54,6 +58,13 @@ public class LhtrkAdminMod implements ModInitializer {
             RestartScheduler.init(server, LOGGER);
         });
         ServerTickEvents.END_SERVER_TICK.register(RestartScheduler::onServerTick);
+
+        ServerChunkEvents.CHUNK_LOAD.register((world, chunk, newlyGenerated) -> {
+            if (world.dimension().equals(LhtrkAccessMod.MAYAK_DIM) && hasStaleSurfaceHeightmap(chunk)) {
+                Heightmap.primeHeightmaps(chunk, EnumSet.allOf(Heightmap.Types.class));
+                chunk.markUnsaved();
+            }
+        });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(Commands.literal("mayak")
@@ -136,9 +147,59 @@ public class LhtrkAdminMod implements ModInitializer {
                         ctx.getSource().sendSuccess(() -> Component.literal(adminConfig.reloadSuccess).withColor(0x00F5D4), true);
                         return 1;
                     }));
+
+            dispatcher.register(Commands.literal("fixmayakmap")
+                    .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
+                    .executes(ctx -> fixMayakHeightmaps(ctx.getSource().getServer(), ctx.getSource()::sendSuccess, 32))
+                    .then(Commands.argument("radiusChunks", IntegerArgumentType.integer(1, 64))
+                            .executes(ctx -> {
+                                int radius = IntegerArgumentType.getInteger(ctx, "radiusChunks");
+                                return fixMayakHeightmaps(ctx.getSource().getServer(), ctx.getSource()::sendSuccess, radius);
+                            })));
         });
 
         LOGGER.info("Модуль LHTRK sndct Admin завантажено!");
+    }
+
+    private static boolean hasStaleSurfaceHeightmap(LevelChunk chunk) {
+        int secIdx = chunk.getHighestFilledSectionIndex();
+        if (secIdx < 0) return false;
+        int secY = chunk.getSectionYFromSectionIndex(secIdx);
+        if (secY < 4) return false; // Тільки для чанків із блоками на Y >= 64
+
+        for (int x = 0; x < 16; x += 4) {
+            for (int z = 0; z < 16; z += 4) {
+                if (chunk.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) > 64) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static int fixMayakHeightmaps(MinecraftServer server, java.util.function.BiConsumer<java.util.function.Supplier<Component>, Boolean> reply, int radius) {
+        ServerLevel mayak = server.getLevel(LhtrkAccessMod.MAYAK_DIM);
+        if (mayak == null) return 0;
+
+        int centerCx = ((int) Math.floor(LhtrkAccessMod.getMayakSpawnX())) >> 4;
+        int centerCz = ((int) Math.floor(LhtrkAccessMod.getMayakSpawnZ())) >> 4;
+        int fixed = 0;
+        var allTypes = EnumSet.allOf(Heightmap.Types.class);
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                LevelChunk chunk = mayak.getChunk(centerCx + dx, centerCz + dz);
+                if (hasStaleSurfaceHeightmap(chunk)) {
+                    Heightmap.primeHeightmaps(chunk, allTypes);
+                    chunk.markUnsaved();
+                    fixed++;
+                }
+            }
+        }
+
+        int totalFixed = fixed;
+        reply.accept(() -> Component.literal("✦ Перераховано висоти (Heightmaps) у " + totalFixed + " чанках Маяка!").withColor(0x00F5D4), true);
+        return 1;
     }
 
     private static void teleportToDimensionSpawn(ServerPlayer player, ResourceKey<Level> targetDim, String worldNameUa, int color) {
