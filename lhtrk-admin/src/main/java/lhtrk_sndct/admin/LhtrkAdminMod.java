@@ -189,11 +189,9 @@ public class LhtrkAdminMod implements ModInitializer {
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
                 LevelChunk chunk = mayak.getChunk(centerCx + dx, centerCz + dz);
-                if (hasStaleSurfaceHeightmap(chunk)) {
-                    Heightmap.primeHeightmaps(chunk, allTypes);
-                    chunk.markUnsaved();
-                    fixed++;
-                }
+                Heightmap.primeHeightmaps(chunk, allTypes);
+                chunk.markUnsaved();
+                fixed++;
             }
         }
 
