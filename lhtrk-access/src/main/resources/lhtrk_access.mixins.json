@@ -5,7 +5,9 @@
   "mixins": [
     "ItemEntityMixin",
     "ExperienceOrbMixin",
-    "FarmlandBlockMixin"
+    "FarmlandBlockMixin",
+    "PlayerTargetMixin",
+    "MobTargetMixin"
   ],
   "injectors": {
     "defaultRequire": 1

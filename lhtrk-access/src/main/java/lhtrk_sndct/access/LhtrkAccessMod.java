@@ -151,16 +151,13 @@ public class LhtrkAccessMod implements ModInitializer {
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
-            if (player.entityTags().contains("subscriber") && !isFullPlayer(player)) {
-                addPlayerEntry(player.getUUID().toString(), player.getName().getString(), "LegacyTagMigration");
-            } else {
-                updateUuidAndNameOnJoin(player);
-            }
-
             if (isFullPlayer(player)) {
+                updateUuidAndNameOnJoin(player);
                 player.removeEffect(MobEffects.MINING_FATIGUE);
             } else {
+                player.removeTag("subscriber");
                 applyGuestFatigue(player);
+                pacifyMobsAroundGuest(player);
             }
         });
 
