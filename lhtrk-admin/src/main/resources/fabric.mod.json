@@ -18,6 +18,9 @@
     "minecraft": "~26.3",
     "java": ">=21",
     "fabric-api": "*",
-    "lhtrk_access": "*"
+    "lhtrk_access": "*",
+    "lhtrk_afk": "*",
+    "lhtrk_night_skipper": "*",
+    "lhtrk_placeholders": "*"
   }
 }

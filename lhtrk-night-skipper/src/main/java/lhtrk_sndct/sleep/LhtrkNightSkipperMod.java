@@ -1,5 +1,7 @@
 package lhtrk_sndct.sleep;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import lhtrk_sndct.access.LhtrkAccessMod;
 import lhtrk_sndct.afk.LhtrkAfkMod;
 import net.fabricmc.api.ModInitializer;
@@ -16,6 +18,12 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,19 +31,28 @@ public class LhtrkNightSkipperMod implements ModInitializer {
     public static final String MOD_ID = "lhtrk_night_skipper";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    private static final double MIN_SLEEP_PERCENTAGE = 0.20;
-    private static final double DEFAULT_SLEEP_PERCENTAGE = 0.50;
-    private static final double MAX_SLEEP_PERCENTAGE = 0.90;
-    private static final double PERCENTAGE_STEP = 0.10;
-
-    // Початок доби (0 тіків) — момент світанку, коли сонце на горизонті й видно перші промені на шейдерах
-    private static final int TARGET_MORNING_TIME = 0;
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final int DAY_LENGTH = 24000;
-    private static final int MAX_NIGHT_TICKS = DAY_LENGTH - 12541; // 11459 тіків
-    private static final int MAX_WARP_DURATION_TICKS = 1200; // ~60 секунд для повної ночі
-    private static final double TICKS_PER_SERVER_TICK = (double) MAX_NIGHT_TICKS / MAX_WARP_DURATION_TICKS;
 
-    private static double currentSleepPercentage = DEFAULT_SLEEP_PERCENTAGE;
+    private static Path configPath;
+    private static NightSkipperConfig config = new NightSkipperConfig();
+
+    public static class NightSkipperConfig {
+        public double minSleepPercentage = 0.20;
+        public double defaultSleepPercentage = 0.50;
+        public double maxSleepPercentage = 0.90;
+        public double percentageStep = 0.10;
+        public int targetMorningTime = 0;
+        public int maxWarpDurationTicks = 1200;
+        public boolean ignoreAfkPlayers = true;
+        public boolean clearWeatherOnDawn = true;
+        public String msgSleepingPrefix = "🛏 Сплять: ";
+        public String msgSleepingNeeded = " • Ще потрібно: ";
+        public String msgDawnChat = "☀ Настає світанок... Ніч пропускається!";
+        public String msgWarpingActionBar = "☀ Пропуск ночі...";
+    }
+
+    private static double currentSleepPercentage = 0.50;
     private static boolean failedAttemptPending = false;
 
     private static boolean isWarping = false;
@@ -46,6 +63,12 @@ public class LhtrkNightSkipperMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            configPath = server.getServerDirectory().resolve("config").resolve("lhtrk_night_skipper.json");
+            reloadConfig();
+            currentSleepPercentage = config.defaultSleepPercentage;
+        });
+
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             var silentSource = server.createCommandSourceStack().withSuppressedOutput();
             server.getCommands().performPrefixedCommand(silentSource, "gamerule players_sleeping_percentage 100");
@@ -65,7 +88,7 @@ public class LhtrkNightSkipperMod implements ModInitializer {
         int sleepingCount = 0;
 
         for (ServerPlayer p : overworld.players()) {
-            if (!p.isSpectator() && LhtrkAccessMod.isFullPlayer(p) && !LhtrkAfkMod.isAfk(p)) {
+            if (!p.isSpectator() && LhtrkAccessMod.isFullPlayer(p) && (!config.ignoreAfkPlayers || !LhtrkAfkMod.isAfk(p))) {
                 eligiblePlayers.add(p);
                 if (p.isSleeping()) {
                     sleepingCount++;
@@ -75,7 +98,7 @@ public class LhtrkNightSkipperMod implements ModInitializer {
 
         if (mayakLevel != null) {
             for (ServerPlayer p : mayakLevel.players()) {
-                if (!p.isSpectator() && LhtrkAccessMod.isFullPlayer(p) && !LhtrkAfkMod.isAfk(p)) {
+                if (!p.isSpectator() && LhtrkAccessMod.isFullPlayer(p) && (!config.ignoreAfkPlayers || !LhtrkAfkMod.isAfk(p))) {
                     eligiblePlayers.add(p);
                     if (p.isSleeping()) {
                         sleepingCount++;
@@ -102,8 +125,8 @@ public class LhtrkNightSkipperMod implements ModInitializer {
             if (sleepingCount == 0) {
                 if (failedAttemptPending) {
                     failedAttemptPending = false;
-                    currentSleepPercentage = Math.max(MIN_SLEEP_PERCENTAGE,
-                            Math.round((currentSleepPercentage - PERCENTAGE_STEP) * 100.0) / 100.0);
+                    currentSleepPercentage = Math.max(config.minSleepPercentage,
+                            Math.round((currentSleepPercentage - config.percentageStep) * 100.0) / 100.0);
                 }
 
                 if (wasSleepOverlayActive) {
@@ -127,11 +150,10 @@ public class LhtrkNightSkipperMod implements ModInitializer {
                     default -> neededMore + " гравців";
                 };
 
-                Component actionBar = Component.literal("🛏 ")
+                Component actionBar = Component.literal(config.msgSleepingPrefix)
                         .withColor(0x00F5D4)
-                        .append(Component.literal("Сплять: ").withColor(0xAAAAAA))
                         .append(Component.literal(sleepingCount + "/" + requiredCount).withColor(0xFEE440))
-                        .append(Component.literal(" • Ще потрібно: ").withColor(0xAAAAAA))
+                        .append(Component.literal(config.msgSleepingNeeded).withColor(0xAAAAAA))
                         .append(Component.literal(peopleWord).withColor(0xFF2A85));
 
                 for (ServerPlayer p : eligiblePlayers) {
@@ -153,8 +175,8 @@ public class LhtrkNightSkipperMod implements ModInitializer {
             }
 
             failedAttemptPending = false;
-            currentSleepPercentage = Math.min(MAX_SLEEP_PERCENTAGE,
-                    Math.round((currentSleepPercentage + PERCENTAGE_STEP) * 100.0) / 100.0);
+            currentSleepPercentage = Math.min(config.maxSleepPercentage,
+                    Math.round((currentSleepPercentage + config.percentageStep) * 100.0) / 100.0);
 
             isWarping = true;
             fractionalAccumulator = 0.0;
@@ -165,16 +187,16 @@ public class LhtrkNightSkipperMod implements ModInitializer {
                 }
             }
 
-            Component chatMsg = Component.literal("☀ ")
-                    .withColor(0xFEE440)
-                    .append(Component.literal("Настає світанок... Ніч пропускається!").withColor(0x00F5D4));
+            Component chatMsg = Component.literal(config.msgDawnChat).withColor(0x00F5D4);
             for (ServerPlayer p : eligiblePlayers) {
                 p.sendSystemMessage(chatMsg);
             }
         }
 
         // Враховуємо природний тік (+1), який сервер уже зробив у цьому тіку, щоб не перелітати світанок
-        fractionalAccumulator += TICKS_PER_SERVER_TICK;
+        int maxNightTicks = DAY_LENGTH - 12541 + config.targetMorningTime;
+        double ticksPerServerTick = (double) maxNightTicks / Math.max(1, config.maxWarpDurationTicks);
+        fractionalAccumulator += ticksPerServerTick;
         int desiredTotalStep = (int) Math.floor(fractionalAccumulator);
         fractionalAccumulator -= desiredTotalStep;
         int extraTicksThisTick = Math.max(0, desiredTotalStep - 1);
@@ -203,9 +225,7 @@ public class LhtrkNightSkipperMod implements ModInitializer {
             return;
         }
 
-        Component actionBar = Component.literal("☀ ")
-                .withColor(0xFEE440)
-                .append(Component.literal("Пропуск ночі...").withColor(0x00F5D4));
+        Component actionBar = Component.literal(config.msgWarpingActionBar).withColor(0x00F5D4);
         for (ServerPlayer p : eligiblePlayers) {
             p.sendSystemMessage(actionBar, true);
         }
@@ -214,22 +234,52 @@ public class LhtrkNightSkipperMod implements ModInitializer {
 
     private static long computeTicksToDawn(long totalTicks) {
         long dayTime = Math.floorMod(totalTicks, DAY_LENGTH);
-        long ticksToTarget = Math.floorMod(TARGET_MORNING_TIME - dayTime, DAY_LENGTH);
+        long ticksToTarget = Math.floorMod(config.targetMorningTime - dayTime, DAY_LENGTH);
         return ticksToTarget == 0 ? DAY_LENGTH : ticksToTarget;
     }
 
     private static void finishNightSkip(ServerLevel overworld, ServerLevel mayakLevel, List<ServerPlayer> eligiblePlayers) {
         resetWarpState();
 
-        if (overworld.isRaining() || overworld.isThundering()) {
-            overworld.resetWeatherCycle();
-        }
-        if (mayakLevel != null && (mayakLevel.isRaining() || mayakLevel.isThundering())) {
-            mayakLevel.resetWeatherCycle();
+        if (config.clearWeatherOnDawn) {
+            if (overworld.isRaining() || overworld.isThundering()) {
+                overworld.resetWeatherCycle();
+            }
+            if (mayakLevel != null && (mayakLevel.isRaining() || mayakLevel.isThundering())) {
+                mayakLevel.resetWeatherCycle();
+            }
         }
 
         for (ServerPlayer p : eligiblePlayers) {
             p.sendSystemMessage(Component.empty(), true);
+        }
+    }
+
+    public static synchronized void reloadConfig() {
+        if (configPath == null) return;
+        if (!Files.exists(configPath)) {
+            saveConfig();
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
+            NightSkipperConfig loaded = GSON.fromJson(reader, NightSkipperConfig.class);
+            if (loaded != null) {
+                config = loaded;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка читання config/lhtrk_night_skipper.json", e);
+        }
+    }
+
+    private static void saveConfig() {
+        if (configPath == null) return;
+        try {
+            Files.createDirectories(configPath.getParent());
+            try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(config, writer);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка запису config/lhtrk_night_skipper.json", e);
         }
     }
 

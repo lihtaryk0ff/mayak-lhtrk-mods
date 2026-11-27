@@ -52,6 +52,18 @@ public final class RestartScheduler {
         public int scheduledHour = 4;
         public int scheduledMinute = 0;
         public String timezone = "Europe/Kyiv";
+        public int defaultTechSeconds = 15;
+        public String techTitle = "ТЕХНІЧНИЙ РЕСТАРТ";
+        public String techSubtitle = "Перезавантаження через {seconds} сек...";
+        public String techChatStart = "УВАГА! Технічний рестарт сервера через {seconds} сек!";
+        public String techActionBar = "Технічний рестарт через {seconds} сек";
+        public String techDisconnect = "Технічний рестарт сервера!\nПовертайтесь за мить.";
+        public String scheduledWarn15m = "✦ Планове перезавантаження сервера через 15 хвилин (о {time}).";
+        public String scheduledWarn1m = "✦ Планове перезавантаження сервера через 1 хвилину!";
+        public String scheduledWarn15s = "◇ Перезавантаження сервера через 15 секунд! Зберігаємо світ...";
+        public String scheduledActionBar = "◇ Перезавантаження через {seconds} сек...";
+        public String scheduledDisconnect = "✦ Планове перезавантаження сервера!\nПовертайтесь за 15–30 секунд.";
+        public String cancelMessage = "✦ Перезавантаження сервера скасовано.";
         public String pelicanApiUrl = "";
         public String pelicanServerId = "";
         public String pelicanApiToken = "";
@@ -68,6 +80,17 @@ public final class RestartScheduler {
         lastCountdownShownSec = -1L;
     }
 
+    public static void reloadConfig(Logger logger) {
+        loadConfig(logger);
+        if (!techRestartActive) {
+            scheduleNextDailyRestart();
+        }
+    }
+
+    public static int getDefaultTechSeconds() {
+        return Math.max(1, config.defaultTechSeconds);
+    }
+
     public static void startTechRestart(MinecraftServer server, int seconds) {
         int clampedSeconds = Math.max(1, seconds);
         long now = System.currentTimeMillis() / 1000L;
@@ -77,17 +100,16 @@ public final class RestartScheduler {
         restartTriggered = false;
 
         // Показуємо великий Title перед очима лише один раз на старті тех-рестарту
-        Component title = Component.literal("⚙ ТЕХНІЧНИЙ РЕСТАРТ")
+        Component title = Component.literal(config.techTitle)
                 .withStyle(ChatFormatting.BOLD)
                 .withColor(0xFF2A85);
-        Component subtitle = Component.literal("Перезавантаження через " + clampedSeconds + " сек...")
+        Component subtitle = Component.literal(config.techSubtitle.replace("{seconds}", String.valueOf(clampedSeconds)))
                 .withColor(0xFEE440);
         sendTitleToAll(server, title, subtitle, 5, 50, 15);
         playBellToAll(server);
 
-        Component chat = Component.literal("⚙ ")
-                .withColor(0xFF2A85)
-                .append(Component.literal("УВАГА! Технічний рестарт сервера через " + clampedSeconds + " сек!").withColor(0xFEE440));
+        Component chat = Component.literal(config.techChatStart.replace("{seconds}", String.valueOf(clampedSeconds)))
+                .withColor(0xFEE440);
         broadcastChat(server, chat);
     }
 
@@ -110,7 +132,7 @@ public final class RestartScheduler {
             player.connection.send(new ClientboundSetSubtitleTextPacket(Component.empty()));
             player.sendSystemMessage(Component.empty(), true);
         }
-        broadcastChat(server, Component.literal("✦ Перезавантаження сервера скасовано.").withColor(0x00F5D4));
+        broadcastChat(server, Component.literal(config.cancelMessage).withColor(0x00F5D4));
         return true;
     }
 
@@ -140,9 +162,8 @@ public final class RestartScheduler {
         if (remaining == lastCountdownShownSec) return;
         lastCountdownShownSec = remaining;
 
-        Component actionBar = Component.literal("⚙ Технічний рестарт через ")
-                .withColor(0xFF2A85)
-                .append(Component.literal(remaining + " сек").withColor(0xFEE440));
+        Component actionBar = Component.literal(config.techActionBar.replace("{seconds}", String.valueOf(remaining)))
+                .withColor(0xFEE440);
         sendActionBarToAll(server, actionBar);
     }
 
@@ -155,30 +176,29 @@ public final class RestartScheduler {
         if (remaining <= 900 && !warned15m) {
             warned15m = true;
             String timeStr = String.format("%02d:%02d", config.scheduledHour, config.scheduledMinute);
-            broadcastChat(server, Component.literal("✦ Планове перезавантаження сервера через 15 хвилин (о " + timeStr + ").")
+            broadcastChat(server, Component.literal(config.scheduledWarn15m.replace("{time}", timeStr))
                     .withColor(0x00F5D4));
             playBellToAll(server);
         }
 
         if (remaining <= 60 && !warned1m) {
             warned1m = true;
-            broadcastChat(server, Component.literal("✦ Планове перезавантаження сервера через 1 хвилину!")
+            broadcastChat(server, Component.literal(config.scheduledWarn1m)
                     .withColor(0xFEE440));
             playBellToAll(server);
         }
 
         if (remaining <= 15 && !warned15s) {
             warned15s = true;
-            broadcastChat(server, Component.literal("◇ Перезавантаження сервера через 15 секунд! Зберігаємо світ...")
+            broadcastChat(server, Component.literal(config.scheduledWarn15s)
                     .withColor(0xFF2A85));
             playBellToAll(server);
         }
 
         if (remaining <= 5 && remaining != lastCountdownShownSec) {
             lastCountdownShownSec = remaining;
-            sendActionBarToAll(server, Component.literal("◇ Перезавантаження через ")
-                    .withColor(0xFF2A85)
-                    .append(Component.literal(remaining + " сек...").withColor(0xFEE440)));
+            sendActionBarToAll(server, Component.literal(config.scheduledActionBar.replace("{seconds}", String.valueOf(remaining)))
+                    .withColor(0xFEE440));
         }
     }
 
@@ -189,8 +209,8 @@ public final class RestartScheduler {
         server.saveEverything(false, true, true);
 
         Component disconnectMsg = isTech
-                ? Component.literal("⚙ Технічний рестарт сервера!\nПовертайтесь за мить.").withColor(0xFF2A85)
-                : Component.literal("✦ Планове перезавантаження сервера!\nПовертайтесь за 15–30 секунд.").withColor(0x00F5D4);
+                ? Component.literal(config.techDisconnect).withColor(0xFF2A85)
+                : Component.literal(config.scheduledDisconnect).withColor(0x00F5D4);
 
         for (ServerPlayer player : server.getPlayerList().getPlayers().stream().toList()) {
             player.connection.disconnect(disconnectMsg);

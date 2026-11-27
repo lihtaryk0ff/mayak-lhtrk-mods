@@ -1,7 +1,10 @@
 package lhtrk_sndct.afk;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackBlockCallback;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
@@ -24,6 +27,12 @@ import net.minecraft.world.InteractionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -34,9 +43,23 @@ public class LhtrkAfkMod implements ModInitializer {
     public static final String MOD_ID = "lhtrk_afk";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    private static final long AFK_TIMEOUT_MS = 5 * 60 * 1000L; // 5 хвилин
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final double MOVE_THRESHOLD_SQ = 0.0025; // > 0.05 блока по горизонталі
     private static final DustParticleOptions AFK_ORBIT_DUST = new DustParticleOptions(0x9EA7B3, 0.8F);
+
+    private static Path configPath;
+    private static AfkConfig config = new AfkConfig();
+
+    public static class AfkConfig {
+        public int afkTimeoutSeconds = 300;
+        public boolean showParticles = true;
+        public boolean grayTabName = true;
+        public boolean pausePlayTime = true;
+        public String msgEnterAfk = "◇ Ти перейшов у режим AFK (час гри не рахується).";
+        public String msgLeaveAfk = "✦ Ти повернувся з режиму AFK.";
+        public String msgForceEnter = "◇ Гравця {player} примусово переведено в режим AFK.";
+        public String msgForceLeave = "✦ Гравця {player} виведено з режиму AFK.";
+    }
 
     private static final Map<UUID, Long> LAST_ACTIVITY_MS = new HashMap<>();
     private static final Map<UUID, PlayerPose> LAST_POSES = new HashMap<>();
@@ -46,6 +69,10 @@ public class LhtrkAfkMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            configPath = server.getServerDirectory().resolve("config").resolve("lhtrk_afk.json");
+            reloadConfig();
+        });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             ServerPlayer player = handler.getPlayer();
             UUID uuid = player.getUUID();
@@ -111,15 +138,13 @@ public class LhtrkAfkMod implements ModInitializer {
                                     ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
                                     if (isAfk(target)) {
                                         markActive(target);
-                                        ctx.getSource().sendSuccess(() -> Component.literal("✦ Гравця ")
-                                                .append(Component.literal(target.getName().getString()).withColor(0x00F5D4))
-                                                .append(" виведено з режиму AFK."), true);
+                                        String msg = config.msgForceLeave.replace("{player}", target.getName().getString());
+                                        ctx.getSource().sendSuccess(() -> Component.literal(msg).withColor(0x00F5D4), true);
                                     } else {
                                         LAST_POSES.put(target.getUUID(), capturePose(target));
                                         setAfkState(target, true);
-                                        ctx.getSource().sendSuccess(() -> Component.literal("◇ Гравця ")
-                                                .append(Component.literal(target.getName().getString()).withColor(0xAAAAAA))
-                                                .append(" примусово переведено в режим AFK."), true);
+                                        String msg = config.msgForceEnter.replace("{player}", target.getName().getString());
+                                        ctx.getSource().sendSuccess(() -> Component.literal(msg).withColor(0xAAAAAA), true);
                                     }
                                     return 1;
                                 }))));
@@ -130,6 +155,38 @@ public class LhtrkAfkMod implements ModInitializer {
 
     public static boolean isAfk(ServerPlayer player) {
         return AFK_PLAYERS.contains(player.getUUID());
+    }
+
+    public static AfkConfig getConfig() {
+        return config;
+    }
+
+    public static synchronized void reloadConfig() {
+        if (configPath == null) return;
+        if (!Files.exists(configPath)) {
+            saveConfig();
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(configPath, StandardCharsets.UTF_8)) {
+            AfkConfig loaded = GSON.fromJson(reader, AfkConfig.class);
+            if (loaded != null) {
+                config = loaded;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка читання config/lhtrk_afk.json", e);
+        }
+    }
+
+    private static void saveConfig() {
+        if (configPath == null) return;
+        try {
+            Files.createDirectories(configPath.getParent());
+            try (Writer writer = Files.newBufferedWriter(configPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(config, writer);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка запису config/lhtrk_afk.json", e);
+        }
     }
 
     private void onServerTick(MinecraftServer server) {
@@ -153,13 +210,14 @@ public class LhtrkAfkMod implements ModInitializer {
                     markActive(player, now);
                 } else if (!AFK_PLAYERS.contains(uuid)) {
                     long lastActive = LAST_ACTIVITY_MS.getOrDefault(uuid, now);
-                    if (now - lastActive >= AFK_TIMEOUT_MS) {
+                    long timeoutMs = Math.max(10, config.afkTimeoutSeconds) * 1000L;
+                    if (now - lastActive >= timeoutMs) {
                         setAfkState(player, true);
                     }
                 }
             }
 
-            if (spawnParticles && AFK_PLAYERS.contains(uuid)) {
+            if (spawnParticles && config.showParticles && AFK_PLAYERS.contains(uuid)) {
                 spawnAfkParticles(player, tickCount);
             }
         }
@@ -183,9 +241,13 @@ public class LhtrkAfkMod implements ModInitializer {
 
         if (!afk) {
             LAST_ACTIVITY_MS.put(uuid, System.currentTimeMillis());
-            player.sendSystemMessage(Component.literal("✦ Ти повернувся з режиму AFK.").withColor(0x00F5D4));
+            if (!config.msgLeaveAfk.isEmpty()) {
+                player.sendSystemMessage(Component.literal(config.msgLeaveAfk).withColor(0x00F5D4));
+            }
         } else {
-            player.sendSystemMessage(Component.literal("◇ Ти перейшов у режим AFK (час гри не рахується).").withColor(0xAAAAAA));
+            if (!config.msgEnterAfk.isEmpty()) {
+                player.sendSystemMessage(Component.literal(config.msgEnterAfk).withColor(0xAAAAAA));
+            }
         }
 
         MinecraftServer server = player.level().getServer();

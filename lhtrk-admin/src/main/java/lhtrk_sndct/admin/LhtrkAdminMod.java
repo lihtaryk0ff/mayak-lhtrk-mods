@@ -1,7 +1,12 @@
 package lhtrk_sndct.admin;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import lhtrk_sndct.access.LhtrkAccessMod;
+import lhtrk_sndct.afk.LhtrkAfkMod;
+import lhtrk_sndct.placeholders.LhtrkPlaceholdersMod;
+import lhtrk_sndct.sleep.LhtrkNightSkipperMod;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -17,6 +22,12 @@ import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.io.Reader;
+import java.io.Writer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Set;
 
@@ -24,9 +35,24 @@ public class LhtrkAdminMod implements ModInitializer {
     public static final String MOD_ID = "lhtrk_admin";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
+    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
+    private static Path adminConfigPath;
+    private static AdminConfig adminConfig = new AdminConfig();
+
+    public static class AdminConfig {
+        public String mayakWorldName = "Маяк";
+        public String overworldName = "Великі Землі";
+        public String teleportPrefix = "✦ Телепортовано у світ: ";
+        public String reloadSuccess = "✦ Конфіги всіх модів LHTRK перезавантажено!";
+    }
+
     @Override
     public void onInitialize() {
-        ServerLifecycleEvents.SERVER_STARTING.register(server -> RestartScheduler.init(server, LOGGER));
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            adminConfigPath = server.getServerDirectory().resolve("config").resolve("lhtrk_admin.json");
+            reloadAdminConfig();
+            RestartScheduler.init(server, LOGGER);
+        });
         ServerTickEvents.END_SERVER_TICK.register(RestartScheduler::onServerTick);
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -34,13 +60,13 @@ public class LhtrkAdminMod implements ModInitializer {
                     .requires(source -> serverIsOp(source.getServer(), source.getTextName()))
                     .executes(ctx -> {
                         ServerPlayer self = ctx.getSource().getPlayerOrException();
-                        teleportToDimensionSpawn(self, LhtrkAccessMod.MAYAK_DIM, "Маяк", 0x00F5D4);
+                        teleportToDimensionSpawn(self, LhtrkAccessMod.MAYAK_DIM, adminConfig.mayakWorldName, 0x00F5D4);
                         return 1;
                     })
                     .then(Commands.argument("target", EntityArgument.player())
                             .executes(ctx -> {
                                 ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
-                                teleportToDimensionSpawn(target, LhtrkAccessMod.MAYAK_DIM, "Маяк", 0x00F5D4);
+                                teleportToDimensionSpawn(target, LhtrkAccessMod.MAYAK_DIM, adminConfig.mayakWorldName, 0x00F5D4);
                                 ctx.getSource().sendSuccess(() -> Component.literal("✦ ")
                                         .append(Component.literal(target.getName().getString()).withColor(0x00F5D4))
                                         .append(" телепортовано у світ Маяк."), true);
@@ -51,13 +77,13 @@ public class LhtrkAdminMod implements ModInitializer {
                     .requires(source -> serverIsOp(source.getServer(), source.getTextName()))
                     .executes(ctx -> {
                         ServerPlayer self = ctx.getSource().getPlayerOrException();
-                        teleportToDimensionSpawn(self, Level.OVERWORLD, "Великі Землі", 0x55FF55);
+                        teleportToDimensionSpawn(self, Level.OVERWORLD, adminConfig.overworldName, 0x55FF55);
                         return 1;
                     })
                     .then(Commands.argument("target", EntityArgument.player())
                             .executes(ctx -> {
                                 ServerPlayer target = EntityArgument.getPlayer(ctx, "target");
-                                teleportToDimensionSpawn(target, Level.OVERWORLD, "Великі Землі", 0x55FF55);
+                                teleportToDimensionSpawn(target, Level.OVERWORLD, adminConfig.overworldName, 0x55FF55);
                                 ctx.getSource().sendSuccess(() -> Component.literal("✦ ")
                                         .append(Component.literal(target.getName().getString()).withColor(0x55FF55))
                                         .append(" телепортовано у Великі Землі."), true);
@@ -79,7 +105,7 @@ public class LhtrkAdminMod implements ModInitializer {
                 dispatcher.register(Commands.literal(cmdName)
                         .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
                         .executes(ctx -> {
-                            RestartScheduler.startTechRestart(ctx.getSource().getServer(), 15);
+                            RestartScheduler.startTechRestart(ctx.getSource().getServer(), RestartScheduler.getDefaultTechSeconds());
                             return 1;
                         })
                         .then(Commands.argument("seconds", IntegerArgumentType.integer(1, 3600))
@@ -97,6 +123,19 @@ public class LhtrkAdminMod implements ModInitializer {
                                     return 1;
                                 })));
             }
+
+            dispatcher.register(Commands.literal("lhtrkreload")
+                    .requires(source -> source.getEntity() == null || serverIsOp(source.getServer(), source.getTextName()))
+                    .executes(ctx -> {
+                        LhtrkAccessMod.reloadConfig();
+                        LhtrkAfkMod.reloadConfig();
+                        LhtrkNightSkipperMod.reloadConfig();
+                        LhtrkPlaceholdersMod.reloadConfig();
+                        reloadAdminConfig();
+                        RestartScheduler.reloadConfig(LOGGER);
+                        ctx.getSource().sendSuccess(() -> Component.literal(adminConfig.reloadSuccess).withColor(0x00F5D4), true);
+                        return 1;
+                    }));
         });
 
         LOGGER.info("Модуль LHTRK sndct Admin завантажено!");
@@ -119,8 +158,36 @@ public class LhtrkAdminMod implements ModInitializer {
                 z = spawnPos.getZ() + 0.5;
             }
             player.teleportTo(destination, x, y, z, Set.of(), player.getYRot(), player.getXRot(), true);
-            player.sendSystemMessage(Component.literal("✦ Телепортовано у світ: ")
+            player.sendSystemMessage(Component.literal(adminConfig.teleportPrefix)
                     .append(Component.literal(worldNameUa).withColor(color)));
+        }
+    }
+
+    public static synchronized void reloadAdminConfig() {
+        if (adminConfigPath == null) return;
+        if (!Files.exists(adminConfigPath)) {
+            saveAdminConfig();
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(adminConfigPath, StandardCharsets.UTF_8)) {
+            AdminConfig loaded = GSON.fromJson(reader, AdminConfig.class);
+            if (loaded != null) {
+                adminConfig = loaded;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка читання config/lhtrk_admin.json", e);
+        }
+    }
+
+    private static void saveAdminConfig() {
+        if (adminConfigPath == null) return;
+        try {
+            Files.createDirectories(adminConfigPath.getParent());
+            try (Writer writer = Files.newBufferedWriter(adminConfigPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(adminConfig, writer);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка запису config/lhtrk_admin.json", e);
         }
     }
 

@@ -93,9 +93,26 @@ public class LhtrkAccessMod implements ModInitializer {
     private static final List<SubscriberEntry> PLAYERS_WHITELIST = new ArrayList<>();
     private static Path subscribersFilePath;
     private static Path mayakSpawnConfigPath;
+    private static Path accessConfigPath;
+    private static AccessConfig accessConfig = new AccessConfig();
     private static MayakSpawnConfig mayakSpawnConfig = new MayakSpawnConfig(
             DEFAULT_MAYAK_SPAWN_X, DEFAULT_MAYAK_SPAWN_Y, DEFAULT_MAYAK_SPAWN_Z
     );
+
+    public static class AccessConfig {
+        public String discordUrl = "https://discord.gg/gxEgpubfqa";
+        public int outsideMayakSeconds = 5;
+        public int stuckCooldownSeconds = 600;
+        public double mobPacifyRadius = 24.0;
+        public double creeperPacifyRadius = 7.0;
+        public String msgGuestWarningPrefix = "◇ У тебе доступ Гостя! Отримати доступ Гравця: ";
+        public String msgDiscordLabel = "[Discord]";
+        public String msgDiscordHover = "Натисни, щоб перейти в Discord та отримати доступ Гравця";
+        public String msgOutsideMayak = "◇ Цей світ доступний лише з доступом Гравця! Повернення на МАЯК через 5 сек...";
+        public String msgStuckSuccess = "✦ Тебе повернуто на точку спавну МАЯКА!";
+        public String msgSubGranted = "✦ Тобі відкрито доступ Гравця! Дозволено будівництво та всі світи.";
+        public String msgUnsubRevoked = "◇ Твій доступ змінено на Гостя. Відкритий лише МАЯК.";
+    }
 
     public static class MayakSpawnConfig {
         public double x;
@@ -128,8 +145,8 @@ public class LhtrkAccessMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
             subscribersFilePath = server.getServerDirectory().resolve("subscribers.json");
             mayakSpawnConfigPath = server.getServerDirectory().resolve("config").resolve("lhtrk_mayak.json");
-            loadSubscribers();
-            loadMayakSpawn();
+            accessConfigPath = server.getServerDirectory().resolve("config").resolve("lhtrk_access.json");
+            reloadConfig();
         });
 
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
@@ -244,10 +261,10 @@ public class LhtrkAccessMod implements ModInitializer {
                 } else {
                     int ticksOutside = OUTSIDE_MAYAK_TICKS.getOrDefault(player.getUUID(), 0) + 1;
                     if (ticksOutside == 1) {
-                        player.sendSystemMessage(Component.literal("◇ Цей світ доступний лише з доступом Гравця! Повернення на МАЯК через 5 сек...")
+                        player.sendSystemMessage(Component.literal(accessConfig.msgOutsideMayak)
                                 .withColor(0xFF2A85));
                     }
-                    if (ticksOutside >= 100) {
+                    if (ticksOutside >= Math.max(1, accessConfig.outsideMayakSeconds) * 20) {
                         OUTSIDE_MAYAK_TICKS.remove(player.getUUID());
                         teleportBackToMayak(player, server);
                     } else {
@@ -276,7 +293,7 @@ public class LhtrkAccessMod implements ModInitializer {
                                     if (onlinePlayer != null) {
                                         onlinePlayer.addTag("subscriber");
                                         onlinePlayer.removeEffect(MobEffects.MINING_FATIGUE);
-                                        onlinePlayer.sendSystemMessage(Component.literal("✦ Тобі відкрито доступ Гравця! Дозволено будівництво та всі світи.")
+                                        onlinePlayer.sendSystemMessage(Component.literal(accessConfig.msgSubGranted)
                                                 .withColor(0x00F5D4));
                                     }
                                     ctx.getSource().sendSuccess(() -> Component.literal("✦ ")
@@ -303,7 +320,7 @@ public class LhtrkAccessMod implements ModInitializer {
                                         onlinePlayer.removeTag("subscriber");
                                         applyGuestFatigue(onlinePlayer);
                                         pacifyMobsAroundGuest(onlinePlayer);
-                                        onlinePlayer.sendSystemMessage(Component.literal("◇ Твій доступ змінено на Гостя. Відкритий лише МАЯК.")
+                                        onlinePlayer.sendSystemMessage(Component.literal(accessConfig.msgUnsubRevoked)
                                                 .withColor(0xFF2A85));
                                     }
                                     ctx.getSource().sendSuccess(() -> Component.literal("◇ ")
@@ -353,7 +370,7 @@ public class LhtrkAccessMod implements ModInitializer {
 
                         long now = System.currentTimeMillis();
                         long lastUsed = STUCK_COOLDOWNS.getOrDefault(player.getUUID(), 0L);
-                        long cooldownMs = 600_000L;
+                        long cooldownMs = Math.max(0, accessConfig.stuckCooldownSeconds) * 1000L;
                         if (now - lastUsed < cooldownMs) {
                             long totalSecLeft = (cooldownMs - (now - lastUsed)) / 1000L + 1;
                             long minLeft = totalSecLeft / 60;
@@ -377,7 +394,7 @@ public class LhtrkAccessMod implements ModInitializer {
                                         player.getXRot(),
                                         true
                                 );
-                                player.sendSystemMessage(Component.literal("✦ Тебе повернуто на точку спавну МАЯКА!")
+                                player.sendSystemMessage(Component.literal(accessConfig.msgStuckSuccess)
                                         .withColor(0x00F5D4));
                             }
                         }
@@ -453,7 +470,9 @@ public class LhtrkAccessMod implements ModInitializer {
     }
 
     private static void pacifyMobsAroundGuest(ServerPlayer guest) {
-        for (Mob mob : guest.level().getEntitiesOfClass(Mob.class, guest.getBoundingBox().inflate(24.0))) {
+        double mobRadius = accessConfig.mobPacifyRadius;
+        double creeperDistSq = accessConfig.creeperPacifyRadius * accessConfig.creeperPacifyRadius;
+        for (Mob mob : guest.level().getEntitiesOfClass(Mob.class, guest.getBoundingBox().inflate(mobRadius))) {
             if (mob.getTarget() == guest || mob.getLastHurtByMob() == guest) {
                 mob.setTarget(null);
                 mob.setLastHurtByMob(null);
@@ -472,7 +491,7 @@ public class LhtrkAccessMod implements ModInitializer {
                 }
             }
 
-            if (mob instanceof Creeper creeper && creeper.getSwellDir() > 0 && creeper.distanceToSqr(guest) <= 49.0) {
+            if (mob instanceof Creeper creeper && creeper.getSwellDir() > 0 && creeper.distanceToSqr(guest) <= creeperDistSq) {
                 if (creeper.getTarget() == null || creeper.getTarget() == guest) {
                     creeper.setTarget(null);
                     creeper.setSwellDir(-1);
@@ -619,18 +638,52 @@ public class LhtrkAccessMod implements ModInitializer {
         }
         MESSAGE_COOLDOWNS.put(player.getUUID(), now);
 
-        Component discordLink = Component.literal("[Discord]")
+        Component discordLink = Component.literal(accessConfig.msgDiscordLabel)
                 .setStyle(Style.EMPTY
                         .withColor(0x00F5D4)
                         .withUnderlined(true)
-                        .withClickEvent(new ClickEvent.OpenUrl(URI.create(DISCORD_URL)))
-                        .withHoverEvent(new HoverEvent.ShowText(Component.literal("Натисни, щоб перейти в Discord та отримати доступ Гравця")))
+                        .withClickEvent(new ClickEvent.OpenUrl(URI.create(accessConfig.discordUrl)))
+                        .withHoverEvent(new HoverEvent.ShowText(Component.literal(accessConfig.msgDiscordHover)))
                 );
 
-        Component fullMessage = Component.literal("◇ У тебе доступ Гостя! Отримати доступ Гравця: ")
+        Component fullMessage = Component.literal(accessConfig.msgGuestWarningPrefix)
                 .withColor(0xFF2A85)
                 .append(discordLink);
 
         player.sendSystemMessage(fullMessage);
+    }
+
+    public static synchronized void reloadConfig() {
+        loadSubscribers();
+        loadMayakSpawn();
+        loadAccessConfig();
+    }
+
+    private static synchronized void loadAccessConfig() {
+        if (accessConfigPath == null) return;
+        if (!Files.exists(accessConfigPath)) {
+            saveAccessConfig();
+            return;
+        }
+        try (Reader reader = Files.newBufferedReader(accessConfigPath, StandardCharsets.UTF_8)) {
+            AccessConfig loaded = GSON.fromJson(reader, AccessConfig.class);
+            if (loaded != null) {
+                accessConfig = loaded;
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка читання config/lhtrk_access.json", e);
+        }
+    }
+
+    private static synchronized void saveAccessConfig() {
+        if (accessConfigPath == null) return;
+        try {
+            Files.createDirectories(accessConfigPath.getParent());
+            try (Writer writer = Files.newBufferedWriter(accessConfigPath, StandardCharsets.UTF_8)) {
+                GSON.toJson(accessConfig, writer);
+            }
+        } catch (IOException e) {
+            LOGGER.error("Помилка запису config/lhtrk_access.json", e);
+        }
     }
 }

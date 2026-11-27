@@ -1,3 +1,6 @@
 dependencies {
     implementation project(':lhtrk-access')
+    implementation project(':lhtrk-afk')
+    implementation project(':lhtrk-night-skipper')
+    implementation project(':lhtrk-placeholders')
 }

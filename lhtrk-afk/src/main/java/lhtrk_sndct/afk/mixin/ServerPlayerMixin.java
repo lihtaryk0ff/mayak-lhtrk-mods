@@ -20,7 +20,7 @@ public abstract class ServerPlayerMixin {
     @Inject(method = "getTabListDisplayName", at = @At("HEAD"), cancellable = true)
     private void lhtrk$grayTabNameWhenAfk(CallbackInfoReturnable<Component> cir) {
         ServerPlayer self = (ServerPlayer) (Object) this;
-        if (LhtrkAfkMod.isAfk(self)) {
+        if (LhtrkAfkMod.getConfig().grayTabName && LhtrkAfkMod.isAfk(self)) {
             cir.setReturnValue(Component.literal(self.getName().getString()).withStyle(ChatFormatting.GRAY));
         }
     }
@@ -31,7 +31,7 @@ public abstract class ServerPlayerMixin {
     @Inject(method = "awardStat(Lnet/minecraft/stats/Stat;I)V", at = @At("HEAD"), cancellable = true)
     private void lhtrk$pausePlayTimeWhenAfk(Stat<?> stat, int increment, CallbackInfo ci) {
         ServerPlayer self = (ServerPlayer) (Object) this;
-        if (LhtrkAfkMod.isAfk(self) && Stats.PLAY_TIME.equals(stat.getValue())) {
+        if (LhtrkAfkMod.getConfig().pausePlayTime && LhtrkAfkMod.isAfk(self) && Stats.PLAY_TIME.equals(stat.getValue())) {
             ci.cancel();
         }
     }
